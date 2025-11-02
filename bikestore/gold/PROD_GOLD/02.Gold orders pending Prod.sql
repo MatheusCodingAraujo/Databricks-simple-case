@@ -1,0 +1,68 @@
+-- Databricks notebook source
+-- MAGIC %python
+-- MAGIC bronze_path   = 'abfss://uc-ext-azure@externalazure28.dfs.core.windows.net/bikestore/bronze/'
+-- MAGIC silver_path   = 'abfss://uc-ext-azure@externalazure28.dfs.core.windows.net/bikestore/silver/'
+-- MAGIC gold_path     = 'abfss://uc-ext-azure@externalazure28.dfs.core.windows.net/bikestore/gold/'
+-- MAGIC resource_path = 'abfss://uc-ext-azure@externalazure28.dfs.core.windows.net/bikestore/resource/origem/'
+-- MAGIC resource_path_volume = '/Volumes/bikestore/logistica/bikestore_resource/origem'
+
+-- COMMAND ----------
+
+-- MAGIC %python
+-- MAGIC silver_map = {
+-- MAGIC     "tmp_silver_customer":      f"{silver_path}/customer/",
+-- MAGIC     "tmp_silver_orders":        f"{silver_path}/orders/",
+-- MAGIC     #"tmp_silver_product":       f"{silver_path}/product/",
+-- MAGIC
+-- MAGIC }
+-- MAGIC for view_name, path in silver_map.items():
+-- MAGIC     (spark.read.format('delta')
+-- MAGIC         .load(path)
+-- MAGIC         .createOrReplaceTempView(view_name))
+-- MAGIC  
+-- MAGIC
+
+-- COMMAND ----------
+
+-- MAGIC %python
+-- MAGIC df_orders_pending = spark.sql("""
+-- MAGIC                                
+-- MAGIC WITH pending AS(   
+-- MAGIC
+-- MAGIC SELECT  
+-- MAGIC   customer_id
+-- MAGIC   ,order_date
+-- MAGIC   ,sum(quantity) quantity
+-- MAGIC   ,store_name
+-- MAGIC   --,status
+-- MAGIC   --,lower(status) as minusculo
+-- MAGIC   --,upper(status) as maiusculo
+-- MAGIC FROM tmp_silver_orders
+-- MAGIC WHERE 1=1
+-- MAGIC AND lower(status) = 'pending' 
+-- MAGIC --and lower(status) in ('pending','delivered') 
+-- MAGIC GROUP BY  customer_id,store_name,order_date
+-- MAGIC  --,status
+-- MAGIC
+-- MAGIC )
+-- MAGIC SELECT 
+-- MAGIC   p.*
+-- MAGIC   ,c.first_name as first_name_customer
+-- MAGIC   ,c.email
+-- MAGIC   ,c.phone
+-- MAGIC
+-- MAGIC FROM pending  P
+-- MAGIC LEFT JOIN  tmp_silver_customer c ON P.customer_id = c.customer_id
+-- MAGIC WHERE c.email IS NOT NULL
+-- MAGIC AND c.phone IS NOT NULL
+-- MAGIC          
+-- MAGIC                               
+-- MAGIC                               """)
+-- MAGIC
+-- MAGIC # salvar em Delta na gold
+-- MAGIC df_orders_pending.write\
+-- MAGIC     .mode('overwrite')\
+-- MAGIC     .format('delta')\
+-- MAGIC     .option('mergeSchema','true')\
+-- MAGIC     .save(f'{gold_path}/orders_pending')
+-- MAGIC     

@@ -1,0 +1,89 @@
+-- Databricks notebook source
+-- MAGIC %python
+-- MAGIC bronze_path   = 'abfss://uc-ext-azure@externalazure28.dfs.core.windows.net/bikestore/bronze/'
+-- MAGIC silver_path   = 'abfss://uc-ext-azure@externalazure28.dfs.core.windows.net/bikestore/silver/'
+-- MAGIC gold_path     = 'abfss://uc-ext-azure@externalazure28.dfs.core.windows.net/bikestore/gold/'
+-- MAGIC resource_path = 'abfss://uc-ext-azure@externalazure28.dfs.core.windows.net/bikestore/resource/origem/'
+-- MAGIC resource_path_volume = '/Volumes/bikestore/logistica/bikestore_resource/origem'
+
+-- COMMAND ----------
+
+-- MAGIC %python
+-- MAGIC bronze_map = {
+-- MAGIC     #"tmp_bronze_brands":      f"{bronze_path}/brands/",
+-- MAGIC     #"tmp_bronze_categories":  f"{bronze_path}/categories/",
+-- MAGIC     #"tmp_bronze_customers":   f"{bronze_path}/customers/",
+-- MAGIC     "tmp_bronze_order_items": f"{bronze_path}/order_items/",
+-- MAGIC     "tmp_bronze_orders":      f"{bronze_path}/orders/",
+-- MAGIC     #"tmp_bronze_products":    f"{bronze_path}/products/",
+-- MAGIC     "tmp_bronze_staffs":      f"{bronze_path}/staffs/",
+-- MAGIC     #"tmp_bronze_stocks":      f"{bronze_path}/stocks/",
+-- MAGIC     "tmp_bronze_stores":      f"{bronze_path}/stores/",
+-- MAGIC }
+-- MAGIC for view_name, path in bronze_map.items():
+-- MAGIC     (spark.read.format('delta')
+-- MAGIC         .load(path)
+-- MAGIC         .createOrReplaceTempView(view_name))
+-- MAGIC  
+-- MAGIC
+
+-- COMMAND ----------
+
+-- MAGIC %python
+-- MAGIC df_orders_silver = spark.sql("""
+-- MAGIC with order_items as(
+-- MAGIC SELECT 
+-- MAGIC    OI.order_id
+-- MAGIC   ,OI.item_id
+-- MAGIC   ,OI.product_id
+-- MAGIC   ,OI.quantity
+-- MAGIC   ,OI.list_price 
+-- MAGIC   --,(OI.list_price * OI.quantity) value_test
+-- MAGIC   ,ROUND((OI.list_price * OI.quantity)* (1-OI.discount),2) AS total_sale
+-- MAGIC   ,OI.discount
+-- MAGIC FROM tmp_bronze_order_items OI
+-- MAGIC
+-- MAGIC )
+-- MAGIC
+-- MAGIC -- select final ''
+-- MAGIC SELECT 
+-- MAGIC   ORD.order_id,
+-- MAGIC   ORD.customer_id,
+-- MAGIC   CASE 
+-- MAGIC       WHEN ORD.order_status = 1 THEN 'Pending'
+-- MAGIC       WHEN ORD.order_status = 2 THEN 'Processing'
+-- MAGIC       WHEN ORD.order_status = 3 THEN 'Shipped'
+-- MAGIC       WHEN ORD.order_status = 4 THEN 'Delivered'
+-- MAGIC       ELSE 'Unknown'
+-- MAGIC     END status,
+-- MAGIC   ORD.order_status,
+-- MAGIC   ORD.order_date,
+-- MAGIC   ORD.required_date,
+-- MAGIC   ORD.shipped_date,
+-- MAGIC   --ORD.store_id,
+-- MAGIC   --st.store_id AS store_id2store,
+-- MAGIC   ST.store_name,
+-- MAGIC   ST.state,
+-- MAGIC   ST.city,
+-- MAGIC   --ORD.staff_id,
+-- MAGIC   --STF.staff_id AS IDSTAF2,
+-- MAGIC   STF.first_name AS first_name_staff,
+-- MAGIC   STF.active AS active_staff,
+-- MAGIC   STF.email,
+-- MAGIC   OIT.product_id,
+-- MAGIC   OIT.quantity,
+-- MAGIC   OIT.total_sale,
+-- MAGIC   OIT.list_price,
+-- MAGIC   OIT.discount
+-- MAGIC FROM   tmp_bronze_orders ORD
+-- MAGIC LEFT JOIN tmp_bronze_stores ST  ON ORD.store_id = ST.store_id
+-- MAGIC LEFT JOIN tmp_bronze_staffs STF ON ORD.staff_id = STF.staff_id
+-- MAGIC LEFT JOIN       order_items OIT ON ORD.order_id = OIT.order_id
+-- MAGIC                               """)
+-- MAGIC
+-- MAGIC # salvar em Delta na silver 
+-- MAGIC df_orders_silver.write\
+-- MAGIC     .mode('overwrite')\
+-- MAGIC     .format('delta')\
+-- MAGIC     .option('mergeSchema','true')\
+-- MAGIC     .save(f'{silver_path}/orders')

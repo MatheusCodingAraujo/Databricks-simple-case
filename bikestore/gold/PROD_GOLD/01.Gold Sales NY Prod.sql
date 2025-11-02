@@ -1,0 +1,50 @@
+-- Databricks notebook source
+-- MAGIC %python
+-- MAGIC bronze_path   = 'abfss://uc-ext-azure@externalazure28.dfs.core.windows.net/bikestore/bronze/'
+-- MAGIC silver_path   = 'abfss://uc-ext-azure@externalazure28.dfs.core.windows.net/bikestore/silver/'
+-- MAGIC gold_path     = 'abfss://uc-ext-azure@externalazure28.dfs.core.windows.net/bikestore/gold/'
+-- MAGIC resource_path = 'abfss://uc-ext-azure@externalazure28.dfs.core.windows.net/bikestore/resource/origem/'
+-- MAGIC resource_path_volume = '/Volumes/bikestore/logistica/bikestore_resource/origem'
+
+-- COMMAND ----------
+
+-- MAGIC %python
+-- MAGIC silver_map = {
+-- MAGIC     #"tmp_silver_customer":      f"{silver_path}/customer/",
+-- MAGIC     "tmp_silver_orders":        f"{silver_path}/orders/",
+-- MAGIC     #"tmp_silver_product":       f"{silver_path}/product/",
+-- MAGIC
+-- MAGIC }
+-- MAGIC for view_name, path in silver_map.items():
+-- MAGIC     (spark.read.format('delta')
+-- MAGIC         .load(path)
+-- MAGIC         .createOrReplaceTempView(view_name))
+-- MAGIC  
+-- MAGIC
+
+-- COMMAND ----------
+
+-- MAGIC %python
+-- MAGIC df_sales_ny_gold = spark.sql("""
+-- MAGIC                                
+-- MAGIC select 
+-- MAGIC   shipped_date
+-- MAGIC   ,round(sum(total_sale),2) as total_sale
+-- MAGIC   --,state,status
+-- MAGIC  from tmp_silver_orders 
+-- MAGIC  where state = 'NY'
+-- MAGIC  and status = 'Delivered'
+-- MAGIC  and shipped_date is not null
+-- MAGIC  group by shipped_date
+-- MAGIC  --,state  ,status
+-- MAGIC          
+-- MAGIC                               
+-- MAGIC                               """)
+-- MAGIC
+-- MAGIC # salvar em Delta na silver 
+-- MAGIC df_sales_ny_gold.write\
+-- MAGIC     .mode('overwrite')\
+-- MAGIC     .format('delta')\
+-- MAGIC     .option('mergeSchema','true')\
+-- MAGIC     .save(f'{gold_path}/sales_ny')
+-- MAGIC     

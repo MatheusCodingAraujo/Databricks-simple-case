@@ -1,0 +1,61 @@
+-- Databricks notebook source
+-- MAGIC %python
+-- MAGIC bronze_path   = 'abfss://uc-ext-azure@externalazure28.dfs.core.windows.net/bikestore/bronze/'
+-- MAGIC silver_path   = 'abfss://uc-ext-azure@externalazure28.dfs.core.windows.net/bikestore/silver/'
+-- MAGIC gold_path     = 'abfss://uc-ext-azure@externalazure28.dfs.core.windows.net/bikestore/gold/'
+-- MAGIC resource_path = 'abfss://uc-ext-azure@externalazure28.dfs.core.windows.net/bikestore/resource/origem/'
+-- MAGIC resource_path_volume = '/Volumes/bikestore/logistica/bikestore_resource/origem'
+
+-- COMMAND ----------
+
+-- MAGIC %python
+-- MAGIC bronze_map = {
+-- MAGIC     #"tmp_bronze_brands":      f"{bronze_path}/brands/",
+-- MAGIC     #"tmp_bronze_categories":  f"{bronze_path}/categories/",
+-- MAGIC     "tmp_bronze_customers":   f"{bronze_path}/customers/",
+-- MAGIC     #"tmp_bronze_order_items": f"{bronze_path}/order_items/",
+-- MAGIC     #"tmp_bronze_orders":      f"{bronze_path}/orders/",
+-- MAGIC     #"tmp_bronze_products":    f"{bronze_path}/products/",
+-- MAGIC     #"tmp_bronze_staffs":      f"{bronze_path}/staffs/",
+-- MAGIC     #"tmp_bronze_stocks":      f"{bronze_path}/stocks/",
+-- MAGIC     #"tmp_bronze_stores":      f"{bronze_path}/stores/",
+-- MAGIC }
+-- MAGIC for view_name, path in bronze_map.items():
+-- MAGIC     (spark.read.format('delta')
+-- MAGIC         .load(path)
+-- MAGIC         .createOrReplaceTempView(view_name))
+-- MAGIC  
+-- MAGIC
+
+-- COMMAND ----------
+
+-- MAGIC %python
+-- MAGIC df_customer_silver = spark.sql("""
+-- MAGIC
+-- MAGIC SELECT 
+-- MAGIC   CT.customer_id
+-- MAGIC   ,CT.first_name
+-- MAGIC   ,CT.last_name
+-- MAGIC   ,CT.phone
+-- MAGIC   ,CT.email
+-- MAGIC   ,CT.street
+-- MAGIC   ,CT.city
+-- MAGIC   ,CT.state
+-- MAGIC   ,CT.zip_code
+-- MAGIC FROM  tmp_bronze_customers CT
+-- MAGIC WHERE  1=1
+-- MAGIC AND  CT.phone IS NOT NULL -- vazio 
+-- MAGIC AND  CT.phone NOT IN ('NULL','NULL ')-- texto null
+-- MAGIC and  CT.email IS NOT NULL -- vazio 
+-- MAGIC AND  CT.email NOT IN ('NULL','NULL ')
+-- MAGIC          
+-- MAGIC                               
+-- MAGIC                               """)
+-- MAGIC
+-- MAGIC # salvar em Delta na silver 
+-- MAGIC df_customer_silver.write\
+-- MAGIC     .mode('overwrite')\
+-- MAGIC     .format('delta')\
+-- MAGIC     .option('mergeSchema','true')\
+-- MAGIC     .save(f'{silver_path}/customer')
+-- MAGIC
